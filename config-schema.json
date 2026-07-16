@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Config",
+  "type": "object",
+  "properties": {
+    "bot_presence": {
+      "description": "Bot presence / activity shown in the Discord member list.",
+      "$ref": "#/$defs/BotPresence"
+    },
+    "data_repositories": {
+      "description": "Sources of data to index and search over.",
+      "$ref": "#/$defs/DataRepositories"
+    },
+    "discord_token": {
+      "description": "Discord Bot Token",
+      "type": "string"
+    },
+    "github_token": {
+      "description": "GitHub Personal Access Token",
+      "type": "string"
+    },
+    "max_results": {
+      "description": "Maximum number of search results returned per query.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "search_weights": {
+      "description": "Fine-grained tuning knobs for the two-pass search scoring formula.",
+      "$ref": "#/$defs/SearchWeights"
+    },
+    "suggestion_header": {
+      "description": "Header message prepended to search suggestions posted in forum threads.",
+      "type": "string"
+    },
+    "threshold": {
+      "description": "Minimum TF-IDF cosine similarity score (0.0–1.0) for a result to be\nincluded in search suggestions. Lower values return more results but\nwith less precision.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "required": [
+    "discord_token",
+    "github_token",
+    "threshold",
+    "max_results",
+    "suggestion_header",
+    "bot_presence",
+    "search_weights",
+    "data_repositories"
+  ],
+  "$defs": {
+    "ActivityKind": {
+      "description": "Activity type shown next to the bot name in the Discord member list.",
+      "type": "string",
+      "enum": [
+        "playing",
+        "watching",
+        "listening",
+        "competing"
+      ]
+    },
+    "BotPresence": {
+      "description": "Bot presence shown in the Discord member list on startup.",
+      "type": "object",
+      "properties": {
+        "activity": {
+          "description": "Activity type: playing, watching, listening, or competing.",
+          "$ref": "#/$defs/ActivityKind"
+        },
+        "message": {
+          "description": "The text displayed next to the activity type (e.g. \"for questions\").",
+          "type": "string"
+        },
+        "status": {
+          "description": "Online status: online, dnd, idle, or invisible.",
+          "$ref": "#/$defs/BotStatus"
+        }
+      },
+      "required": [
+        "activity",
+        "message",
+        "status"
+      ]
+    },
+    "BotStatus": {
+      "description": "Online status for the bot.",
+      "type": "string",
+      "enum": [
+        "online",
+        "dnd",
+        "idle",
+        "invisible"
+      ]
+    },
+    "DataRepositories": {
+      "description": "All data sources the bot indexes and searches over.",
+      "type": "object",
+      "properties": {
+        "discord_forums": {
+          "description": "Discord forum channels to sync threads and messages from.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DiscordForum"
+          }
+        },
+        "git_docs": {
+          "description": "Git repositories to clone and index documentation from.\nAny git-accessible URL is supported (not just GitHub).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GitDocsSource"
+          }
+        },
+        "github_issues": {
+          "description": "GitHub repositories to sync issues and releases from.\nIssues and releases are fetched via the GitHub REST API.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GithubIssueSource"
+          }
+        }
+      },
+      "required": [
+        "github_issues",
+        "git_docs",
+        "discord_forums"
+      ]
+    },
+    "DiscordForum": {
+      "description": "A Discord forum channel whose threads and messages are synced and searched.",
+      "type": "object",
+      "properties": {
+        "channel_id": {
+          "description": "Discord Channel ID of the forum channel as a string snowflake.",
+          "type": "string"
+        },
+        "guild_id": {
+          "description": "Discord Guild (server) ID as a string snowflake.",
+          "type": "string"
+        },
+        "reply": {
+          "description": "When `true`, the bot posts search suggestions in reply to new threads.",
+          "type": "boolean"
+        },
+        "weight": {
+          "description": "Score multiplier applied to all search results from this forum.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "guild_id",
+        "channel_id",
+        "weight",
+        "reply"
+      ]
+    },
+    "DocSet": {
+      "description": "A single documentation directory within a cloned git repository.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path to the docs directory relative to the repository root (e.g. `\"./docs\"`).",
+          "type": "string"
+        },
+        "url_mapping": {
+          "description": "URL mappings that translate local file paths to public web URLs.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UrlMapping"
+          }
+        }
+      },
+      "required": [
+        "path",
+        "url_mapping"
+      ]
+    },
+    "GitDocsSource": {
+      "description": "A git repository to clone locally and index documentation files from.",
+      "type": "object",
+      "properties": {
+        "docs": {
+          "description": "Documentation paths within the cloned repository to index.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DocSet"
+          }
+        },
+        "repository": {
+          "description": "Full git clone URL (e.g. `\"https://github.com/Skidamek/AutoModpack.git\"`).\nAny git-accessible URL works — GitHub, GitLab, self-hosted, etc.",
+          "type": "string"
+        },
+        "weight": {
+          "description": "Score multiplier applied to all search results from this repository's docs.\nUse values > 1.0 to surface these docs above issues/threads of equal relevance.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "repository",
+        "weight",
+        "docs"
+      ]
+    },
+    "GithubIssueSource": {
+      "description": "A GitHub repository whose issues and releases are synced via the API.",
+      "type": "object",
+      "properties": {
+        "github_repo": {
+          "description": "GitHub repository in `\"owner/name\"` format (e.g. `\"Skidamek/AutoModpack\"`).",
+          "type": "string"
+        },
+        "weight": {
+          "description": "Score multiplier applied to all search results from this repository.\nUse values > 1.0 to surface this repo's results higher, < 1.0 to suppress them.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "github_repo",
+        "weight"
+      ]
+    },
+    "SearchWeights": {
+      "description": "Tuning knobs for the two-pass search scoring formula.\n\n**Pass 1 — base score** (computed per candidate before filtering):\n```text\nrelevance   = TF-IDF cosine similarity between query and candidate   ∈ [0, 1]\nversion_wt  = 1 / (1 + semantic_version_distance × version_distance_scale)\nsource_wt   = per-entry weight from data_repositories config\n\nbase_score  = relevance × version_wt × source_wt\n```\n\n**Pass 2 — recency blend** (applied after threshold filtering):\n```text\nrecency      = (updated_at − oldest_updated_at) / time_span   ∈ [0, 1]\nrecency_mult = recency_base + recency_influence × recency      ∈ [recency_base, recency_base + recency_influence]\n\nfinal_score  = base_score × recency_mult\n```",
+      "type": "object",
+      "properties": {
+        "version_distance_scale": {
+          "description": "Steepness of the version-distance decay curve.\nHigher → stronger preference for same-version results.\nLower  → version proximity matters less.",
+          "type": "number",
+          "format": "double"
+        },
+        "version_index_distance_scale": {
+          "description": "Decay steepness used when release tags cannot be parsed to SemVer.\nThe fallback distance is normalised to [0, 1] by index size, so this\nscale is comparable across projects with different release cadences.",
+          "type": "number",
+          "format": "double"
+        },
+        "version_major_penalty": {
+          "description": "Penalty per major-version difference (e.g. v1.x vs v2.x).\nLarge value: results from a different major version score much lower.",
+          "type": "number",
+          "format": "double"
+        },
+        "version_minor_penalty": {
+          "description": "Penalty per minor-version difference (e.g. v1.0 vs v1.2).",
+          "type": "number",
+          "format": "double"
+        },
+        "version_patch_penalty": {
+          "description": "Penalty per patch-version difference (e.g. v1.0.0 vs v1.0.3).\nSmall value: patch differences have minimal effect on ranking.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "version_major_penalty",
+        "version_minor_penalty",
+        "version_patch_penalty",
+        "version_distance_scale",
+        "version_index_distance_scale"
+      ]
+    },
+    "UrlMapping": {
+      "description": "Translates a local file path prefix to a public URL prefix.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Local path prefix to match (e.g. `\"./docs\"`).",
+          "type": "string"
+        },
+        "to": {
+          "description": "Public URL prefix to replace it with (e.g. `\"https://example.com/docs\"`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ]
+    }
+  }
+}

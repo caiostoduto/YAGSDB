@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=./target/config-schema.json
+---
+
+# ── Authentication ────────────────────────────────────────────────────────────
+
+discord_token: "<DISCORD_TOKEN>"
+github_token:  "<GITHUB_TOKEN>"
+
+# ── Search parameters ─────────────────────────────────────────────────────────
+
+# Minimum TF-IDF cosine similarity (0.0–1.0) for a result to be shown.
+threshold: 0.2
+# Maximum number of results returned per search.
+max_results: 4
+# Header prepended to the suggestion reply posted in new forum threads.
+suggestion_header: "Hey! I'm AutoModpack Discord Bot, and I'm here to help you figure out how to solve your issue. While you wait until someone reaches you, I've searched through our solutions database and found those related issues that you might want to take a look:"
+
+# ── Bot presence ──────────────────────────────────────────────────────────────
+
+bot_presence:
+  activity: watching  # playing | watching | listening | competing
+  message:  "for questions"
+  status:   online    # online | dnd | idle | invisible
+
+# ── Data repositories ─────────────────────────────────────────────────────────
+#
+# Issues and docs are configured independently so you can, for example,
+# track issues from a GitHub repo without cloning it for docs, or index docs
+# from any git host (not just GitHub).
+
+data_repositories:
+
+  # GitHub repositories — issues and releases are fetched via the GitHub API.
+  github_issues:
+    - github_repo: "Skidamek/AutoModpack"
+      weight: 1.0
+    - github_repo: "Skidamek/AutoModpackVelocity"
+      weight: 1.0
+
+  # Git repositories — cloned locally and indexed for documentation.
+  # `repository` accepts any git clone URL (https, ssh, etc.).
+  git_docs:
+    - repository: "https://github.com/Skidamek/AutoModpack.git"
+      weight: 1.5   # docs surface above issues/threads of equal relevance
+      docs:
+        - path: "./docs"
+          url_mapping:
+            - from: "./docs"
+              to:   "https://moddedmc.wiki/en/project/automodpack/latest/docs"
+
+  # Discord forum channels — threads and messages are indexed and searched.
+  discord_forums:
+    - guild_id:   "1493050890364653710"
+      channel_id: "1526219957749420193"
+      weight: 1.0
+      reply: true   # post suggestions in reply to new threads
+
+# ── Search scoring weights ────────────────────────────────────────────────────
+#
+# All fields are optional; the values shown here are the built-in defaults.
+
+search_weights:
+
+  # Version distance — how strongly release proximity penalises results.
+  #
+  # semantic_distance = major_diff × version_major_penalty
+  #                   + minor_diff × version_minor_penalty
+  #                   + patch_diff × version_patch_penalty
+  #
+  # version_weight = 1 / (1 + semantic_distance × version_distance_scale)
+  version_major_penalty: 12.0   # large: a different major version is a big break
+  version_minor_penalty:  2.0
+  version_patch_penalty:  0.2   # small: patch bumps are usually backwards-compatible
+  version_distance_scale: 0.3   # steepness of the decay curve
+  # Fallback used when release tags can't be parsed to SemVer;
+  # distance is normalised by index size so the scale stays consistent.
+  version_index_distance_scale: 1.5

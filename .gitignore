@@ -1,0 +1,12 @@
+/target
+
+# Config files
+config.yaml
+
+# Database files
+sqlite.db
+sqlite.db-shm
+sqlite.db-wal
+
+# Cloned data repositories
+/repositories
