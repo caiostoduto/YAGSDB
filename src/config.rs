@@ -201,22 +201,3 @@ impl Config {
         Ok(config)
     }
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs::File;
-    use std::io::Write;
-
-    #[test]
-    fn generate_schema() {
-        let schema = schemars::schema_for!(Config);
-        let schema_json =
-            serde_json::to_string_pretty(&schema).expect("Failed to serialize schema");
-        let mut file = File::create("config-schema.json").expect("Failed to create schema file");
-        file.write_all(schema_json.as_bytes())
-            .expect("Failed to write schema");
-    }
-}
