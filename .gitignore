@@ -4,9 +4,7 @@
 config.yaml
 
 # Database files
-sqlite.db
-sqlite.db-shm
-sqlite.db-wal
+sqlite.db*
 
 # Cloned data repositories
 /repositories
