@@ -8,3 +8,6 @@ sqlite.db*
 
 # Cloned data repositories
 /repositories
+
+# Benchmark
+/benchmark

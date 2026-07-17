@@ -116,16 +116,18 @@ async fn format_result_line(result: &search::SearchResult) -> String {
         search::ResultKind::DiscordThread => "`[Discord]`",
     };
 
-    let score_pct = (result.score * 100.0).clamp(0.0, 100.0).round() as u32;
-
     // Title — hyperlinked when a URL is available
     let title_part = match &result.url {
         Some(url) => format!("[**{}**]({})", demoji(result.title.clone()).trim(), url),
         None => format!("**{}**", demoji(result.title.clone()).trim()),
     };
 
+    // let score_pct = (result.score * 100.0).clamp(0.0, 100.0).round() as u32;
+
     // Build line: `(XX%) [Tag] title`
-    format!("**({}%)** {} {}", score_pct, tag, title_part)
+    // format!("**({}%)** {} {}", score_pct, tag, title_part)
+
+    format!("{} {}", tag, title_part)
 }
 
 /// Remove emojis from a string.
