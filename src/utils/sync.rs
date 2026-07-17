@@ -213,7 +213,7 @@ async fn collect_archived_threads(
     let mut before: Option<String> = None;
 
     loop {
-        let mut params = vec![("limit", "25".to_string())];
+        let mut params = vec![("limit", "100".to_string())];
         if let Some(ref b) = before {
             let encoded =
                 percent_encoding::utf8_percent_encode(b, percent_encoding::NON_ALPHANUMERIC)
