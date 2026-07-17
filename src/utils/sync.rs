@@ -199,7 +199,7 @@ async fn persist_messages(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Returns all archived public threads for a forum channel.
-/// 
+///
 /// This function bypasses the current limitation in serenity-rs where the
 /// `get_archived_public_threads` method does not properly encode the `before`
 /// timestamp parameter.
@@ -215,17 +215,15 @@ async fn collect_archived_threads(
     loop {
         let mut params = vec![("limit", "25".to_string())];
         if let Some(ref b) = before {
-            let encoded = percent_encoding::utf8_percent_encode(
-                b,
-                percent_encoding::NON_ALPHANUMERIC,
-            )
-            .to_string();
+            let encoded =
+                percent_encoding::utf8_percent_encode(b, percent_encoding::NON_ALPHANUMERIC)
+                    .to_string();
             params.push(("before", encoded));
         }
 
         let route = serenity::Route::ChannelArchivedPublicThreads { channel_id };
-        let request = serenity::Request::new(route, serenity::LightMethod::Get)
-            .params(Some(params));
+        let request =
+            serenity::Request::new(route, serenity::LightMethod::Get).params(Some(params));
 
         match ctx.http.fire::<serenity::ThreadsData>(request).await {
             Ok(mut res) => {

@@ -4,8 +4,8 @@ use poise::serenity_prelude as serenity;
 pub mod channel_update;
 pub mod message;
 pub mod ready;
-pub mod thread_update;
 pub mod thread_delete;
+pub mod thread_update;
 
 pub async fn event_handler(
     ctx: &serenity::Context,
@@ -26,7 +26,10 @@ pub async fn event_handler(
         serenity::FullEvent::ThreadUpdate { old, new } => {
             thread_update::handle(ctx, old, new, data).await?;
         }
-        serenity::FullEvent::ThreadDelete { thread, full_thread_data } => {
+        serenity::FullEvent::ThreadDelete {
+            thread,
+            full_thread_data,
+        } => {
             thread_delete::handle(ctx, thread, full_thread_data, data).await?;
         }
         _ => {}

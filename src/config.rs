@@ -211,7 +211,9 @@ impl Config {
                     "Warning: config.yaml was not found. A new one has been created from config.example.yaml. Please fill in the required fields and run the bot again.".into()
                 );
             } else {
-                return Err("Error: config.yaml not found and config.example.yaml is missing.".into());
+                return Err(
+                    "Error: config.yaml not found and config.example.yaml is missing.".into(),
+                );
             }
         }
 

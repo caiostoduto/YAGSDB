@@ -62,7 +62,9 @@ pub async fn handle(
 
             println!(
                 "[message.rs] {} created a new thread entitled '{}' and had {} results on search.",
-                new_message.author.name, guild_channel.name, results.len()
+                new_message.author.name,
+                guild_channel.name,
+                results.len()
             );
 
             if !results.is_empty() {
@@ -109,8 +111,8 @@ async fn post_suggestions(
 /// Format a single search result as one line of text.
 async fn format_result_line(result: &search::SearchResult) -> String {
     let tag = match result.kind {
-        search::ResultKind::Doc           => "`[Docs]`",
-        search::ResultKind::GhIssue       => "`[GitHub Issue]`",
+        search::ResultKind::Doc => "`[Docs]`",
+        search::ResultKind::GhIssue => "`[GitHub Issue]`",
         search::ResultKind::DiscordThread => "`[Discord]`",
     };
 

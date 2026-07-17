@@ -101,10 +101,7 @@ async fn fetch_all_pages<T: for<'de> Deserialize<'de>>(
             Ok(r) => {
                 let status = r.status();
                 if !status.is_success() {
-                    eprintln!(
-                        "[github.rs] HTTP Error {} on page {}",
-                        status, url
-                    );
+                    eprintln!("[github.rs] HTTP Error {} on page {}", status, url);
                     break;
                 }
                 match r.json::<Vec<T>>().await {

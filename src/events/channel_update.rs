@@ -16,10 +16,9 @@ pub async fn handle(
             .bind(&thread_id)
             .execute(&data.db)
             .await
+            && res.rows_affected() > 0
         {
-            if res.rows_affected() > 0 {
-                println!("[channel_update.rs] Thread '{}' tags was updated", new.name);
-            }
+            println!("[channel_update.rs] Thread '{}' tags was updated", new.name);
         }
     }
 
