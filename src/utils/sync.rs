@@ -199,15 +199,59 @@ async fn persist_messages(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Returns all archived public threads for a forum channel.
+/// 
+/// This function bypasses the current limitation in serenity-rs where the
+/// `get_archived_public_threads` method does not properly encode the `before`
+/// timestamp parameter.
+///
+/// See: https://github.com/serenity-rs/serenity/issues/3014
 async fn collect_archived_threads(
     ctx: &serenity::Context,
     channel_id: serenity::ChannelId,
 ) -> Vec<serenity::GuildChannel> {
-    channel_id
-        .get_archived_public_threads(ctx, None, None)
-        .await
-        .map(|res| res.threads)
-        .unwrap_or_default()
+    let mut all_threads = Vec::new();
+    let mut before: Option<String> = None;
+
+    loop {
+        let mut params = vec![("limit", "25".to_string())];
+        if let Some(ref b) = before {
+            let encoded = percent_encoding::utf8_percent_encode(
+                b,
+                percent_encoding::NON_ALPHANUMERIC,
+            )
+            .to_string();
+            params.push(("before", encoded));
+        }
+
+        let route = serenity::Route::ChannelArchivedPublicThreads { channel_id };
+        let request = serenity::Request::new(route, serenity::LightMethod::Get)
+            .params(Some(params));
+
+        match ctx.http.fire::<serenity::ThreadsData>(request).await {
+            Ok(mut res) => {
+                let has_more = res.has_more;
+                let last_ts = res
+                    .threads
+                    .last()
+                    .and_then(|t| t.thread_metadata.as_ref())
+                    .and_then(|m| m.archive_timestamp)
+                    .and_then(|ts| ts.to_rfc3339());
+
+                all_threads.append(&mut res.threads);
+
+                if !has_more || last_ts.is_none() {
+                    break;
+                }
+                before = last_ts;
+            }
+            Err(e) => {
+                eprintln!("[sync.rs] Failed to fetch archived threads: {}", e);
+                break;
+            }
+        }
+    }
+
+    all_threads
 }
 
 /// Removes active threads belonging to `channel_id` from the DB and returns

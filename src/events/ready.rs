@@ -9,8 +9,8 @@ pub async fn handle(
 ) -> Result<(), Error> {
     println!("[ready.rs] {} is ready!", data_about_bot.user.name);
 
-    let _ = sync::run_sync(ctx, data).await;
     set_presence(ctx, data).await;
+    let _ = sync::run_sync(ctx, data).await;
 
     Ok(())
 }
