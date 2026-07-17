@@ -107,8 +107,8 @@ async fn post_suggestions(
 /// Format a single search result as one line of text.
 async fn format_result_line(result: &search::SearchResult) -> String {
     let tag = match result.kind {
-        search::ResultKind::Doc => "`[Docs]`",
-        search::ResultKind::GhIssue => "`[GitHub Issue]`",
+        search::ResultKind::Doc           => "`[Docs]`",
+        search::ResultKind::GhIssue       => "`[GitHub Issue]`",
         search::ResultKind::DiscordThread => "`[Discord]`",
     };
 

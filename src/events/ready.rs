@@ -20,16 +20,16 @@ async fn set_presence(ctx: &serenity::Context, data: &Data) {
     let presence = &data.config.bot_presence;
 
     let activity = match &presence.activity {
-        ActivityKind::Playing => serenity::ActivityData::playing(&presence.message),
-        ActivityKind::Watching => serenity::ActivityData::watching(&presence.message),
+        ActivityKind::Playing   => serenity::ActivityData::playing(&presence.message),
+        ActivityKind::Watching  => serenity::ActivityData::watching(&presence.message),
         ActivityKind::Listening => serenity::ActivityData::listening(&presence.message),
         ActivityKind::Competing => serenity::ActivityData::competing(&presence.message),
     };
 
     let status = match &presence.status {
-        BotStatus::Online => serenity::OnlineStatus::Online,
-        BotStatus::Dnd => serenity::OnlineStatus::DoNotDisturb,
-        BotStatus::Idle => serenity::OnlineStatus::Idle,
+        BotStatus::Online    => serenity::OnlineStatus::Online,
+        BotStatus::Dnd       => serenity::OnlineStatus::DoNotDisturb,
+        BotStatus::Idle      => serenity::OnlineStatus::Idle,
         BotStatus::Invisible => serenity::OnlineStatus::Invisible,
     };
 
