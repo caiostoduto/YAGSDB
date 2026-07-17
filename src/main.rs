@@ -3,6 +3,7 @@ use poise::serenity_prelude as serenity;
 pub mod config;
 pub mod db;
 pub mod events;
+pub mod utils;
 pub mod git;
 pub mod github;
 pub mod search;
