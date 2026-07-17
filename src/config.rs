@@ -195,9 +195,26 @@ pub struct DiscordForum {
 
 impl Config {
     #[allow(dead_code)]
-    pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let content = std::fs::read_to_string(path)?;
+    pub fn load() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Self::verify()?;
+        let content = std::fs::read_to_string("config.yaml")?;
         let config = serde_yaml::from_str(&content)?;
         Ok(config)
+    }
+
+    /// Verify that the config file exists and is valid
+    pub fn verify() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if !std::path::Path::new("config.yaml").exists() {
+            if std::path::Path::new("config.example.yaml").exists() {
+                std::fs::copy("config.example.yaml", "config.yaml")?;
+                return Err(
+                    "Warning: config.yaml was not found. A new one has been created from config.example.yaml. Please fill in the required fields and run the bot again.".into()
+                );
+            } else {
+                return Err("Error: config.yaml not found and config.example.yaml is missing.".into());
+            }
+        }
+
+        Ok(())
     }
 }

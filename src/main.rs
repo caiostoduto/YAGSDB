@@ -16,24 +16,8 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[tokio::main]
 async fn main() {
-    // Check if config.yaml exists, if not copy from config.example.yaml
-    if !std::path::Path::new("config.yaml").exists() {
-        if std::path::Path::new("config.example.yaml").exists() {
-            std::fs::copy("config.example.yaml", "config.yaml")
-                .expect("Failed to copy config.example.yaml to config.yaml");
-            eprintln!(
-                "Warning: config.yaml was not found. A new one has been created from config.example.yaml."
-            );
-            eprintln!("Please fill in the required fields and run the bot again.");
-            std::process::exit(1);
-        } else {
-            eprintln!("Error: config.yaml not found and config.example.yaml is missing.");
-            std::process::exit(1);
-        }
-    }
-
     // Load config.yaml
-    let config = config::Config::load("config.yaml").expect("Failed to load config.yaml");
+    let config = config::Config::load().expect("Failed to load config.yaml");
     let token = config.discord_token.clone();
     let intents =
         serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
