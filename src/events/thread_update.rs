@@ -4,7 +4,7 @@ use poise::serenity_prelude::{self as serenity, GuildChannel};
 /// If thread is archived, sync it to DB. If it is unarchived, remove it from DB.
 pub async fn handle(
     ctx: &serenity::Context,
-    old: &Option<GuildChannel>,
+    _old: &Option<GuildChannel>,
     new: &GuildChannel,
     data: &Data,
 ) -> Result<(), Error> {
