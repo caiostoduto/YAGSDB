@@ -9,9 +9,8 @@ pub struct Config {
     pub discord_token: String,
     /// GitHub Personal Access Token
     pub github_token: String,
-    /// Minimum TF-IDF cosine similarity score (0.0–1.0) for a result to be
-    /// included in search suggestions. Lower values return more results but
-    /// with less precision.
+    /// Minimum BM25 relevance score for a result to be included in search
+    /// suggestions. Lower values return more results but with less precision.
     pub threshold: f64,
     /// Maximum number of search results returned per query.
     pub max_results: usize,
@@ -60,11 +59,11 @@ pub struct BotPresence {
 
 // ── Search scoring weights ────────────────────────────────────────────────────
 
-/// Tuning knobs for the two-pass search scoring formula.
+/// Tuning knobs for BM25 retrieval and score adjustments.
 ///
 /// **Pass 1 — base score** (computed per candidate before filtering):
 /// ```text
-/// relevance   = TF-IDF cosine similarity between query and candidate   ∈ [0, 1]
+/// relevance   = field-weighted BM25 score between query and candidate
 /// version_wt  = 1 / (1 + semantic_version_distance × version_distance_scale)
 /// source_wt   = per-entry weight from data_repositories config
 ///
@@ -80,6 +79,32 @@ pub struct BotPresence {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SearchWeights {
+    // ── BM25 field scoring ──────────────────────────────────────────────────
+    /// Controls how strongly repeated query terms affect a field's score.
+    /// The usual BM25 default is 1.2.
+    #[serde(default = "default_bm25_k1")]
+    pub bm25_k1: f64,
+    /// Controls document-length normalisation. `0.0` disables it; the usual
+    /// BM25 default is 0.75.
+    #[serde(default = "default_bm25_b")]
+    pub bm25_b: f64,
+    /// Multiplier for matches in titles, including issue, document, and thread
+    /// titles. A higher value makes concise title matches rank more strongly.
+    #[serde(default = "default_title_weight")]
+    pub title_weight: f64,
+    /// Multiplier for matches in the main issue, document-section, or thread
+    /// body.
+    #[serde(default = "default_body_weight")]
+    pub body_weight: f64,
+    /// Multiplier for matches in GitHub issue comments. Kept lower than body
+    /// matches by default because comments are often noisier.
+    #[serde(default = "default_comment_weight")]
+    pub comment_weight: f64,
+    /// Split Markdown and MDX files at headings before indexing. This produces
+    /// more precise doc matches and URLs with heading anchors.
+    #[serde(default = "default_chunk_docs_by_heading")]
+    pub chunk_docs_by_heading: bool,
+
     // ── Version distance ─────────────────────────────────────────────────────
     //
     // semantic_distance = major_diff × version_major_penalty
@@ -114,6 +139,30 @@ pub struct SearchWeights {
     // /// Additional multiplier awarded to the most recently updated result.
     // /// The effective range is [recency_base, recency_base + recency_influence].
     // pub recency_influence: f64,
+}
+
+fn default_bm25_k1() -> f64 {
+    1.2
+}
+
+fn default_bm25_b() -> f64 {
+    0.75
+}
+
+fn default_title_weight() -> f64 {
+    3.0
+}
+
+fn default_body_weight() -> f64 {
+    1.0
+}
+
+fn default_comment_weight() -> f64 {
+    0.5
+}
+
+fn default_chunk_docs_by_heading() -> bool {
+    true
 }
 
 // ── Data repositories ─────────────────────────────────────────────────────────

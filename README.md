@@ -72,6 +72,8 @@ On first run, YAGSDB creates `sqlite.db` in the working directory. Documentation
 
 Each configured source has a `weight`. Values greater than `1.0` prioritize that source; values below `1.0` de-emphasize it.
 
+Search uses field-weighted BM25. `search_weights` also lets you tune title, body, and comment importance, BM25 length normalization, and whether documentation is split into heading-level chunks. The defaults favor concise title matches and link documentation results to their matched heading.
+
 ### GitHub sources
 
 Add repositories in `owner/name` form under `data_repositories.github_issues`:

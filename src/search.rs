@@ -25,8 +25,10 @@ pub struct SearchResult {
 
 struct Candidate {
     result: SearchResult,
-    text: String,
-    /// Per-entry score multiplier from config (e.g. DocSet.weight, GithubIssueSource.weight).
+    title: String,
+    body: String,
+    comments: String,
+    /// Per-entry score multiplier from config.
     source_weight: f64,
 }
 
@@ -39,7 +41,7 @@ fn tokenize(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Raw term counts (before TF or IDF scaling).
+/// Raw term counts for a field.
 fn count_terms(tokens: &[String]) -> HashMap<String, f64> {
     let mut counts: HashMap<String, f64> = HashMap::new();
     for t in tokens {
@@ -48,68 +50,125 @@ fn count_terms(tokens: &[String]) -> HashMap<String, f64> {
     counts
 }
 
-/// Sub-linear TF: `1 + ln(count)`.
-/// Dampens the effect of repeated words so a term appearing 100 times
-/// only scores ~5.6× rather than 100×.
-fn apply_sublinear_tf(counts: &mut HashMap<String, f64>) {
-    for v in counts.values_mut() {
-        if *v > 0.0 {
-            *v = 1.0 + v.ln();
+/// Return the source-specific corpus bucket for a candidate.
+fn source_bucket(kind: &ResultKind) -> usize {
+    match kind {
+        ResultKind::GhIssue => 0,
+        ResultKind::Doc => 1,
+        ResultKind::DiscordThread => 2,
+    }
+}
+
+#[derive(Clone)]
+struct CandidateTokens {
+    title: Vec<String>,
+    body: Vec<String>,
+    comments: Vec<String>,
+}
+
+struct Bm25Stats {
+    document_count: f64,
+    average_title_len: f64,
+    average_body_len: f64,
+    average_comment_len: f64,
+    document_frequency: HashMap<String, f64>,
+}
+
+/// Build BM25 document-frequency and field-length statistics independently
+/// for each source type.
+fn build_source_bm25_stats(candidates: &[CandidateTokens], buckets: &[usize]) -> [Bm25Stats; 3] {
+    let mut grouped: [Vec<&CandidateTokens>; 3] = std::array::from_fn(|_| Vec::new());
+    for (candidate, bucket) in candidates.iter().zip(buckets) {
+        grouped[*bucket].push(candidate);
+    }
+
+    grouped.map(|group| {
+        let document_count = group.len() as f64;
+        let mut document_frequency = HashMap::new();
+        let mut title_len = 0usize;
+        let mut body_len = 0usize;
+        let mut comment_len = 0usize;
+
+        for candidate in &group {
+            title_len += candidate.title.len();
+            body_len += candidate.body.len();
+            comment_len += candidate.comments.len();
+
+            let unique_terms: std::collections::HashSet<&String> = candidate
+                .title
+                .iter()
+                .chain(candidate.body.iter())
+                .chain(candidate.comments.iter())
+                .collect();
+            for term in unique_terms {
+                *document_frequency.entry(term.clone()).or_insert(0.0) += 1.0;
+            }
         }
-    }
-}
 
-/// Build an IDF table from a corpus of tokenised documents.
-///
-/// `idf(t) = ln((N + 1) / (df(t) + 1)) + 1`
-///
-/// The `+1` smoothing ensures unseen terms get a positive IDF rather than
-/// zero, and prevents division-by-zero for terms that appear in every doc.
-fn build_idf(token_sets: &[Vec<String>]) -> HashMap<String, f64> {
-    let n = token_sets.len() as f64;
-    let mut df: HashMap<String, f64> = HashMap::new();
-
-    for tokens in token_sets {
-        // Count each term once per document.
-        let unique: std::collections::HashSet<&String> = tokens.iter().collect();
-        for t in unique {
-            *df.entry(t.clone()).or_insert(0.0) += 1.0;
+        Bm25Stats {
+            document_count,
+            average_title_len: title_len as f64 / document_count.max(1.0),
+            average_body_len: body_len as f64 / document_count.max(1.0),
+            average_comment_len: comment_len as f64 / document_count.max(1.0),
+            document_frequency,
         }
-    }
-
-    df.into_iter()
-        .map(|(term, doc_freq)| {
-            let idf = ((n + 1.0) / (doc_freq + 1.0)).ln() + 1.0;
-            (term, idf)
-        })
-        .collect()
+    })
 }
 
-/// TF-IDF vector: multiply each term's sub-linear TF by its IDF weight.
-fn tfidf_vector(tokens: &[String], idf: &HashMap<String, f64>) -> HashMap<String, f64> {
-    let mut tf = count_terms(tokens);
-    apply_sublinear_tf(&mut tf);
-    tf.into_iter()
-        .map(|(term, tf_val)| {
-            let idf_val = idf.get(&term).copied().unwrap_or(1.0);
-            (term, tf_val * idf_val)
-        })
-        .collect()
+fn normalized_term_frequency(count: f64, field_len: usize, average_field_len: f64, b: f64) -> f64 {
+    if count == 0.0 {
+        return 0.0;
+    }
+    count / (1.0 - b + b * field_len as f64 / average_field_len.max(1.0))
 }
 
-/// Cosine similarity between two TF-IDF vectors, in [0, 1].
-fn cosine_similarity(a: &HashMap<String, f64>, b: &HashMap<String, f64>) -> f64 {
-    let dot: f64 = a
-        .iter()
-        .filter_map(|(k, v)| b.get(k).map(|bv| v * bv))
-        .sum();
-    let mag_a = a.values().map(|v| v * v).sum::<f64>().sqrt();
-    let mag_b = b.values().map(|v| v * v).sum::<f64>().sqrt();
-    if mag_a == 0.0 || mag_b == 0.0 {
-        0.0
-    } else {
-        dot / (mag_a * mag_b)
+/// Field-weighted BM25 (BM25F). Title, body, and comment matches are
+/// normalised independently before their configured weights are combined.
+fn bm25_score(
+    query_tokens: &[String],
+    candidate: &CandidateTokens,
+    stats: &Bm25Stats,
+    weights: &SearchWeights,
+) -> f64 {
+    if stats.document_count == 0.0 {
+        return 0.0;
     }
+
+    let title_counts = count_terms(&candidate.title);
+    let body_counts = count_terms(&candidate.body);
+    let comment_counts = count_terms(&candidate.comments);
+    let query_terms: std::collections::HashSet<&String> = query_tokens.iter().collect();
+
+    query_terms
+        .into_iter()
+        .map(|term| {
+            let df = stats.document_frequency.get(term).copied().unwrap_or(0.0);
+            let idf = ((stats.document_count - df + 0.5) / (df + 0.5)).ln_1p();
+            let field_tf = weights.title_weight
+                * normalized_term_frequency(
+                    title_counts.get(term).copied().unwrap_or(0.0),
+                    candidate.title.len(),
+                    stats.average_title_len,
+                    weights.bm25_b,
+                )
+                + weights.body_weight
+                    * normalized_term_frequency(
+                        body_counts.get(term).copied().unwrap_or(0.0),
+                        candidate.body.len(),
+                        stats.average_body_len,
+                        weights.bm25_b,
+                    )
+                + weights.comment_weight
+                    * normalized_term_frequency(
+                        comment_counts.get(term).copied().unwrap_or(0.0),
+                        candidate.comments.len(),
+                        stats.average_comment_len,
+                        weights.bm25_b,
+                    );
+
+            idf * (field_tf * (weights.bm25_k1 + 1.0) / (field_tf + weights.bm25_k1))
+        })
+        .sum()
 }
 
 // ── Version weight ───────────────────────────────────────────────────────────
@@ -240,7 +299,8 @@ impl ReleaseIndex {
 async fn load_gh_issues(db: &SqlitePool, issue_weights: &HashMap<String, f64>) -> Vec<Candidate> {
     let rows = sqlx::query(
         "SELECT i.repo, i.number, i.title, i.updated_at,
-                COALESCE(i.body, '') || ' ' || COALESCE(GROUP_CONCAT(c.body, ' '), '') AS full_text
+                COALESCE(i.body, '') AS body,
+                COALESCE(GROUP_CONCAT(c.body, ' '), '') AS comments
          FROM gh_issues i
          LEFT JOIN gh_comments c ON c.issue_id = i.id
          WHERE i.is_pr = 0
@@ -256,11 +316,11 @@ async fn load_gh_issues(db: &SqlitePool, issue_weights: &HashMap<String, f64>) -
             let number: i64 = row.try_get("number").ok()?;
             let title: String = row.try_get("title").ok()?;
             let updated_at_str: Option<String> = row.try_get("updated_at").ok();
-            let full_text: String = row.try_get("full_text").ok().unwrap_or_default();
+            let body: String = row.try_get("body").ok().unwrap_or_default();
+            let comments: String = row.try_get("comments").ok().unwrap_or_default();
 
             let updated_at = parse_rfc3339(updated_at_str.as_deref());
             let url = format!("https://github.com/{}/issues/{}", repo, number);
-            let text = format!("{} {}", title, full_text);
             let source_weight = issue_weights.get(&repo).copied().unwrap_or(1.0);
 
             Some(Candidate {
@@ -272,7 +332,9 @@ async fn load_gh_issues(db: &SqlitePool, issue_weights: &HashMap<String, f64>) -
                     score: 0.0,
                     updated_at,
                 },
-                text,
+                title,
+                body,
+                comments,
                 source_weight,
             })
         })
@@ -299,18 +361,18 @@ async fn load_docs(db: &SqlitePool, doc_weights: &HashMap<String, f64>) -> Vec<C
             let updated_at = parse_rfc3339(updated_at_str.as_deref());
             // Prefer DB title (_meta.json) → markdown heading → filename stem
             let title = db_title.unwrap_or_else(|| filename_stem(&file_path).to_string());
-            let text = format!("{} {}", file_path, content);
-
             Some(Candidate {
                 result: SearchResult {
                     kind: ResultKind::Doc,
-                    title,
+                    title: title.clone(),
                     url,
                     repo: Some(repo),
                     score: 0.0,
                     updated_at,
                 },
-                text,
+                title,
+                body: content,
+                comments: String::new(),
                 source_weight,
             })
         })
@@ -357,13 +419,15 @@ async fn load_threads(
             Some(Candidate {
                 result: SearchResult {
                     kind: ResultKind::DiscordThread,
-                    title,
+                    title: title.clone(),
                     url: Some(url),
                     repo: None,
                     score: 0.0,
                     updated_at: None,
                 },
-                text: messages_text,
+                title,
+                body: messages_text,
+                comments: String::new(),
                 source_weight,
             })
         })
@@ -413,7 +477,7 @@ fn filename_stem(path: &str) -> &str {
 ///
 /// **Pass 1 — base score** (per candidate):
 /// ```text
-/// relevance    = TF-IDF cosine similarity(query, candidate)             -- [0, 1]
+/// relevance    = field-weighted BM25(query, candidate)
 /// version_wt   = 1 / (1 + semantic_distance × version_distance_scale)
 /// source_wt    = per-entry weight from data_repositories config         -- (default 1.0)
 ///
@@ -477,26 +541,28 @@ pub async fn find_similar(
     all.extend(docs);
     all.extend(threads);
 
-    // ── Build corpus IDF from all candidate documents ─────────────────────────
-    // Tokenise every document once here so we can reuse the token lists below.
-    let candidate_token_lists: Vec<Vec<String>> = all.iter().map(|c| tokenize(&c.text)).collect();
+    // ── Build source-specific BM25 statistics ─────────────────────────────────
+    // Tokenise each indexed field once so the scoring loop can reuse it.
+    let candidate_tokens: Vec<CandidateTokens> = all
+        .iter()
+        .map(|c| CandidateTokens {
+            title: tokenize(&c.title),
+            body: tokenize(&c.body),
+            comments: tokenize(&c.comments),
+        })
+        .collect();
+    let candidate_buckets: Vec<usize> = all.iter().map(|c| source_bucket(&c.result.kind)).collect();
 
     let query_tokens = tokenize(query);
+    let source_stats = build_source_bm25_stats(&candidate_tokens, &candidate_buckets);
 
-    // Include the query itself in the IDF corpus so query terms are treated
-    // on the same scale as document terms.
-    let mut idf_corpus: Vec<Vec<String>> = candidate_token_lists.clone();
-    idf_corpus.push(query_tokens.clone());
-
-    let idf = build_idf(&idf_corpus);
-
-    let query_tfidf = tfidf_vector(&query_tokens, &idf);
-
-    // ── Pass 1: base_score = relevance × version_weight × source_weight ──────
-    for (c, candidate_tokens) in all.iter_mut().zip(candidate_token_lists.iter()) {
-        let candidate_tfidf = tfidf_vector(candidate_tokens, &idf);
-
-        let relevance = cosine_similarity(&query_tfidf, &candidate_tfidf);
+    // ── Pass 1: base_score = BM25 relevance × version_weight × source_weight ─
+    for ((c, tokens), bucket) in all
+        .iter_mut()
+        .zip(candidate_tokens.iter())
+        .zip(candidate_buckets.iter())
+    {
+        let relevance = bm25_score(&query_tokens, tokens, &source_stats[*bucket], weights);
         let candidate_ts = c.result.updated_at.unwrap_or(query_ts);
         let version_wt = release_index.version_weight(query_ts, candidate_ts, weights);
 
@@ -573,22 +639,72 @@ mod tests {
         assert_eq!(parse_version("v1.2"), None);
     }
 
-    #[test]
-    fn test_idf_boosts_rare_terms() {
-        // A term appearing in fewer documents should have a higher IDF weight.
-        let corpus = vec![
-            tokenize("install config modpack"),
-            tokenize("install config crash"),
-            tokenize("crash symlink"),
-        ];
-        let idf = build_idf(&corpus);
+    fn test_weights() -> SearchWeights {
+        SearchWeights {
+            bm25_k1: 1.2,
+            bm25_b: 0.75,
+            title_weight: 3.0,
+            body_weight: 1.0,
+            comment_weight: 0.5,
+            chunk_docs_by_heading: true,
+            version_major_penalty: 12.0,
+            version_minor_penalty: 2.0,
+            version_patch_penalty: 0.2,
+            version_distance_scale: 0.3,
+            version_index_distance_scale: 1.5,
+        }
+    }
 
-        // "install" and "config" appear in 2/3 docs; "symlink" only in 1/3.
-        let idf_install = *idf.get("install").unwrap();
-        let idf_symlink = *idf.get("symlink").unwrap();
+    #[test]
+    fn test_bm25_title_matches_rank_above_body_only_matches() {
+        let query = tokenize("install modpack configuration");
+        let candidates = vec![
+            CandidateTokens {
+                title: tokenize("install modpack configuration"),
+                body: tokenize("general reference material"),
+                comments: vec![],
+            },
+            CandidateTokens {
+                title: tokenize("general reference"),
+                body: tokenize("install modpack configuration"),
+                comments: vec![],
+            },
+        ];
+        let stats = build_source_bm25_stats(&candidates, &[1, 1]);
+        let weights = test_weights();
+
         assert!(
-            idf_symlink > idf_install,
-            "rare term should score higher: symlink={idf_symlink} install={idf_install}"
+            bm25_score(&query, &candidates[0], &stats[1], &weights)
+                > bm25_score(&query, &candidates[1], &stats[1], &weights)
+        );
+    }
+
+    #[test]
+    fn test_source_bm25_is_independent_of_other_source_sizes() {
+        let query = tokenize("install modpack configuration");
+        let docs = vec![CandidateTokens {
+            title: tokenize("installation guide"),
+            body: tokenize("install modpack configuration"),
+            comments: vec![],
+        }];
+        let doc_only_stats = build_source_bm25_stats(&docs, &[1]);
+
+        let mut mixed_candidates = docs.clone();
+        let mut mixed_buckets = vec![1];
+        for i in 0..1_000 {
+            mixed_candidates.push(CandidateTokens {
+                title: tokenize(&format!("install issue {}", i)),
+                body: tokenize("modpack configuration failure"),
+                comments: vec![],
+            });
+            mixed_buckets.push(0);
+        }
+        let mixed_stats = build_source_bm25_stats(&mixed_candidates, &mixed_buckets);
+        let weights = test_weights();
+
+        assert_eq!(
+            bm25_score(&query, &docs[0], &doc_only_stats[1], &weights),
+            bm25_score(&query, &docs[0], &mixed_stats[1], &weights)
         );
     }
 }

@@ -8,8 +8,9 @@ github_token:  "<GITHUB_TOKEN>"
 
 # ── Search parameters ─────────────────────────────────────────────────────────
 
-# Minimum TF-IDF cosine similarity (0.0–1.0) for a result to be shown.
-threshold: 0.2
+# Minimum BM25 relevance score for a result to be shown. Increase this to
+# return fewer, more precise results; decrease it to return more matches.
+threshold: 1.0
 # Maximum number of results returned per search.
 max_results: 4
 # Header prepended to the suggestion reply posted in new forum threads.
@@ -60,6 +61,18 @@ data_repositories:
 # All fields are optional; the values shown here are the built-in defaults.
 
 search_weights:
+
+  # BM25 retrieval and field weights. Titles are usually the best concise
+  # signal, while GitHub comments are useful but comparatively noisy.
+  bm25_k1: 1.2       # term-frequency saturation; standard BM25 default
+  bm25_b: 0.75       # length normalisation; standard BM25 default
+  title_weight: 3.0  # issue, document, and Discord thread titles
+  body_weight: 1.0   # issue bodies, document sections, and thread messages
+  comment_weight: 0.5 # GitHub issue comments
+
+  # Split Markdown/MDX documents at headings. This gives more focused search
+  # results and links directly to the matching section. Changing it reindexes docs.
+  chunk_docs_by_heading: true
 
   # Version distance — how strongly release proximity penalises results.
   #

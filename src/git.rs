@@ -115,6 +115,107 @@ fn file_mtime_rfc3339(path: &Path) -> String {
         .unwrap_or_else(|| chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
+// ── Markdown chunking ───────────────────────────────────────────────────────
+
+struct DocChunk {
+    heading: Option<String>,
+    anchor: Option<String>,
+    content: String,
+}
+
+/// Split a Markdown document at headings, preserving pre-heading content as a
+/// separate chunk. Fenced code blocks are ignored so `#` in examples does not
+/// create a false section.
+fn split_markdown_chunks(content: &str) -> Vec<DocChunk> {
+    let mut chunks = Vec::new();
+    let mut current_heading = None;
+    let mut current_lines = Vec::new();
+    let mut in_fence = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+        }
+
+        let heading = (!in_fence)
+            .then(|| parse_markdown_heading(trimmed))
+            .flatten();
+        if let Some(heading) = heading {
+            if !current_lines.is_empty() || current_heading.is_some() {
+                let content = current_lines.join("\n").trim().to_string();
+                if !content.is_empty() {
+                    chunks.push(DocChunk {
+                        anchor: current_heading.as_deref().map(markdown_anchor),
+                        heading: current_heading.take(),
+                        content,
+                    });
+                }
+            }
+            current_heading = Some(heading.to_string());
+            current_lines.clear();
+        } else {
+            current_lines.push(line);
+        }
+    }
+
+    let content = current_lines.join("\n").trim().to_string();
+    if !content.is_empty() {
+        chunks.push(DocChunk {
+            anchor: current_heading.as_deref().map(markdown_anchor),
+            heading: current_heading,
+            content,
+        });
+    }
+
+    chunks
+}
+
+fn parse_markdown_heading(line: &str) -> Option<&str> {
+    let hashes = line.chars().take_while(|c| *c == '#').count();
+    if !(1..=6).contains(&hashes)
+        || !line
+            .as_bytes()
+            .get(hashes)
+            .is_some_and(u8::is_ascii_whitespace)
+    {
+        return None;
+    }
+    let heading = line[hashes..].trim().trim_end_matches('#').trim();
+    (!heading.is_empty()).then_some(heading)
+}
+
+/// Approximate the standard Markdown/GitHub heading-anchor format.
+fn markdown_anchor(heading: &str) -> String {
+    let mut anchor = String::new();
+    let mut previous_was_dash = false;
+    for ch in heading.to_lowercase().chars() {
+        if ch.is_alphanumeric() {
+            anchor.push(ch);
+            previous_was_dash = false;
+        } else if (ch.is_whitespace() || ch == '-') && !anchor.is_empty() && !previous_was_dash {
+            anchor.push('-');
+            previous_was_dash = true;
+        }
+    }
+    anchor.trim_end_matches('-').to_string()
+}
+
+fn chunk_title(document_title: Option<&str>, heading: Option<&str>, file_path: &str) -> String {
+    let document_title = document_title.unwrap_or_else(|| doc_filename_stem(file_path));
+    match heading {
+        Some(heading) if heading != document_title => format!("{} — {}", document_title, heading),
+        _ => document_title.to_string(),
+    }
+}
+
+fn doc_filename_stem(path: &str) -> &str {
+    Path::new(path)
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path)
+}
+
 // ── _meta.json support ───────────────────────────────────────────────────────
 
 /// A single entry in a `_meta.json` file.
@@ -277,13 +378,15 @@ async fn update_repo(clone_url: &str, dir: &Path) -> RepoSyncResult {
 
 // ── Doc indexing ─────────────────────────────────────────────────────────────
 
-/// Index a single documentation file into the `docs` DB table.
+/// Index a documentation file into the `docs` DB table, optionally as one row
+/// per Markdown heading.
 async fn index_doc_file(
     repo_name: &str,
     file_path: &Path,
     repo_dir: &Path,
     url_mapping: &[crate::config::UrlMapping],
     meta_title: Option<&str>,
+    chunk_by_heading: bool,
     db: &SqlitePool,
 ) {
     let rel_path = match file_path.strip_prefix(repo_dir) {
@@ -299,27 +402,60 @@ async fn index_doc_file(
         }
     };
 
+    let chunks = if chunk_by_heading {
+        split_markdown_chunks(&content)
+    } else {
+        vec![DocChunk {
+            heading: None,
+            anchor: None,
+            content,
+        }]
+    };
     let updated_at = file_mtime_rfc3339(file_path);
-    let url = compute_url(&rel_path, url_mapping);
-    let id = format!("{}:{}", repo_name, rel_path);
+    let base_url = compute_url(&rel_path, url_mapping);
 
-    let _ = sqlx::query(
-        "INSERT OR REPLACE INTO docs (id, repo, file_path, url, title, content, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(&id)
-    .bind(repo_name)
-    .bind(&rel_path)
-    .bind(&url)
-    .bind(meta_title)
-    .bind(&content)
-    .bind(&updated_at)
-    .execute(db)
-    .await;
+    // Re-indexing a file must remove chunks for headings that were deleted.
+    let _ = sqlx::query("DELETE FROM docs WHERE repo = ? AND file_path = ?")
+        .bind(repo_name)
+        .bind(&rel_path)
+        .execute(db)
+        .await;
+
+    for (chunk_index, chunk) in chunks.into_iter().enumerate() {
+        let url = match (&base_url, &chunk.anchor) {
+            (Some(base), Some(anchor)) if !anchor.is_empty() => {
+                Some(format!("{}#{}", base, anchor))
+            }
+            (Some(base), _) => Some(base.clone()),
+            (None, _) => None,
+        };
+        let title = chunk_title(meta_title, chunk.heading.as_deref(), &rel_path);
+        let id = format!("{}:{}:{}", repo_name, rel_path, chunk_index);
+
+        let _ = sqlx::query(
+            "INSERT INTO docs (id, repo, file_path, url, title, content, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(repo_name)
+        .bind(&rel_path)
+        .bind(&url)
+        .bind(&title)
+        .bind(&chunk.content)
+        .bind(&updated_at)
+        .execute(db)
+        .await;
+    }
 }
 
 /// Index all configured docs paths for a source into the `docs` DB table.
-async fn index_docs(repo_name: &str, doc_sets: &[DocSet], repo_dir: &Path, db: &SqlitePool) {
+async fn index_docs(
+    repo_name: &str,
+    doc_sets: &[DocSet],
+    repo_dir: &Path,
+    chunk_by_heading: bool,
+    db: &SqlitePool,
+) {
     if doc_sets.is_empty() {
         return;
     }
@@ -349,6 +485,7 @@ async fn index_docs(repo_name: &str, doc_sets: &[DocSet], repo_dir: &Path, db: &
                 repo_dir,
                 url_mapping,
                 meta_title.as_deref(),
+                chunk_by_heading,
                 db,
             )
             .await;
@@ -374,7 +511,7 @@ async fn doc_count_for_repo(db: &SqlitePool, repo_name: &str) -> i64 {
 
 // ── Repo sync ────────────────────────────────────────────────────────────────
 
-async fn sync_source(source: &GitDocsSource, db: &SqlitePool) {
+async fn sync_source(source: &GitDocsSource, chunk_by_heading: bool, db: &SqlitePool) {
     let clone_url = &source.repository;
     let dir = repo_dir_for_url(clone_url);
     // Use a short human-readable label for logs (strip scheme + .git suffix).
@@ -398,7 +535,7 @@ async fn sync_source(source: &GitDocsSource, db: &SqlitePool) {
     };
 
     if needs_index {
-        index_docs(repo_name, &source.docs, &dir, db).await;
+        index_docs(repo_name, &source.docs, &dir, chunk_by_heading, db).await;
     }
 }
 
@@ -409,10 +546,74 @@ fn git_doc_sources(config: &Config) -> &[GitDocsSource] {
 // ── Public API ───────────────────────────────────────────────────────────────
 
 pub async fn start_sync_job(db: SqlitePool, config: Config) {
+    ensure_doc_index_format(&db, config.search_weights.chunk_docs_by_heading).await;
+
     loop {
         for source in git_doc_sources(&config) {
-            sync_source(source, &db).await;
+            sync_source(source, config.search_weights.chunk_docs_by_heading, &db).await;
         }
         tokio::time::sleep(Duration::from_secs(3600)).await;
+    }
+}
+
+/// Clear the old index when the configured document granularity changes so
+/// unchanged local clones are indexed in the requested format on the next
+/// sync cycle.
+async fn ensure_doc_index_format(db: &SqlitePool, chunk_by_heading: bool) {
+    const DOC_CHUNK_INDEX_VERSION: i64 = 1;
+    let description = format!(
+        "Documentation index format: heading_chunks={}",
+        chunk_by_heading
+    );
+
+    let current_description = sqlx::query_scalar::<_, String>(
+        "SELECT description FROM _migrations WHERE version = ? LIMIT 1",
+    )
+    .bind(DOC_CHUNK_INDEX_VERSION)
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten();
+
+    if current_description.as_deref() == Some(&description) {
+        return;
+    }
+
+    let _ = sqlx::query("DELETE FROM docs").execute(db).await;
+    let _ = sqlx::query(
+        "INSERT OR REPLACE INTO _migrations (version, description, applied_at) VALUES (?, ?, ?)",
+    )
+    .bind(DOC_CHUNK_INDEX_VERSION)
+    .bind(&description)
+    .bind(chrono::Utc::now().to_rfc3339())
+    .execute(db)
+    .await;
+    println!("[git.rs] Cleared the documentation index for a format change");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_markdown_chunks_uses_headings_and_anchors() {
+        let chunks = split_markdown_chunks(
+            "Introduction\n\n# Getting Started\nInstall the modpack.\n\n## Server Setup\nConfigure the server.",
+        );
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].anchor, None);
+        assert_eq!(chunks[1].heading.as_deref(), Some("Getting Started"));
+        assert_eq!(chunks[1].anchor.as_deref(), Some("getting-started"));
+        assert_eq!(chunks[2].anchor.as_deref(), Some("server-setup"));
+    }
+
+    #[test]
+    fn split_markdown_chunks_ignores_headings_in_fenced_code() {
+        let chunks = split_markdown_chunks("# Real heading\nText\n```sh\n# not a heading\n```");
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].heading.as_deref(), Some("Real heading"));
+        assert!(chunks[0].content.contains("# not a heading"));
     }
 }
