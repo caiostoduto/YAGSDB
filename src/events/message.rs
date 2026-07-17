@@ -3,7 +3,8 @@ use poise::serenity_prelude as serenity;
 
 use regex::Regex;
 
-pub async fn handle_message(
+/// Handle message creation in forum threads.
+pub async fn handle(
     ctx: &serenity::Context,
     new_message: &serenity::Message,
     data: &Data,
@@ -58,6 +59,9 @@ pub async fn handle_message(
                 &data.config.data_repositories,
             )
             .await;
+
+            println!("[message] {} created a new thread entitled '{}' and had {} results on search.",
+                new_message.author.name, guild_channel.name, results.len());
 
             if !results.is_empty() {
                 let header = &data.config.suggestion_header;
