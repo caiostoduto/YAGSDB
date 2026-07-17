@@ -11,7 +11,7 @@ pub async fn handle(
     if let Some(meta) = &new.thread_metadata {
         if meta.archived {
             // Sync because it was archived
-            println!("Thread {} was archived. Syncing to DB.", new.id);
+            println!("[thread_update.rs] Thread '{}' was archived (added to DB).", new.name);
             sync::sync_single_thread(ctx, new, &data.db).await;
         } else {
             // It is active (re-activated). Remove from DB.
@@ -21,8 +21,8 @@ pub async fn handle(
                 .execute(&data.db)
                 .await;
             println!(
-                "[discord_forum] Thread {} was re-activated. Removed from DB.",
-                thread_id
+                "[thread_update.rs] Thread '{}' was re-activated (removed from DB).",
+                new.name
             );
         }
     }

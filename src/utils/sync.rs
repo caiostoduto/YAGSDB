@@ -353,7 +353,7 @@ pub async fn run_sync(ctx: &serenity::Context, data: &Data) -> Result<(), Error>
 
     // Log summary
     println!(
-        "[discord_forum] Sync complete — {} threads (+{} added, -{} removed)",
+        "[sync.rs] Sync complete — {} threads (+{} added, -{} removed)",
         threads_now, threads_added, threads_removed
     );
     Ok(())

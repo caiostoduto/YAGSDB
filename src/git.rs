@@ -227,16 +227,16 @@ async fn clone_repo(clone_url: &str, dir: &Path) -> RepoSyncResult {
     let repo_leaf = dir.file_name().unwrap().to_str().unwrap();
 
     if let Err(e) = std::fs::create_dir_all(parent) {
-        eprintln!("[git] Could not create {}: {}", parent.display(), e);
+        eprintln!("[git.rs] Could not create {}: {}", parent.display(), e);
         return RepoSyncResult::Failed;
     }
 
     let ok = run_git(&["clone", "--depth=1", clone_url, repo_leaf], parent).await;
     if ok {
-        println!("[git] Cloned {}", clone_url);
+        println!("[git.rs] Cloned {}", clone_url);
         RepoSyncResult::Changed
     } else {
-        eprintln!("[git] Clone failed for {}", clone_url);
+        eprintln!("[git.rs] Clone failed for {}", clone_url);
         RepoSyncResult::Failed
     }
 }
@@ -257,18 +257,18 @@ async fn update_repo(clone_url: &str, dir: &Path) -> RepoSyncResult {
     let before = head_commit(dir).await;
 
     if !run_git(&["fetch", "--depth=1", "origin"], dir).await {
-        eprintln!("[git] fetch failed for {}", clone_url);
+        eprintln!("[git.rs] fetch failed for {}", clone_url);
         return RepoSyncResult::Failed;
     }
     if !run_git(&["reset", "--hard", "origin/HEAD"], dir).await {
-        eprintln!("[git] reset failed for {}", clone_url);
+        eprintln!("[git.rs] reset failed for {}", clone_url);
         return RepoSyncResult::Failed;
     }
 
     let after = head_commit(dir).await;
 
     if before != after {
-        println!("[git] Updated {}", clone_url);
+        println!("[git.rs] Updated {}", clone_url);
         RepoSyncResult::Changed
     } else {
         RepoSyncResult::Unchanged
@@ -294,7 +294,7 @@ async fn index_doc_file(
     let content = match std::fs::read_to_string(file_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[git] Read error {}: {}", file_path.display(), e);
+            eprintln!("[git.rs] Read error {}: {}", file_path.display(), e);
             return;
         }
     };
@@ -328,7 +328,7 @@ async fn index_docs(repo_name: &str, doc_sets: &[DocSet], repo_dir: &Path, db: &
     for doc_set in doc_sets {
         let docs_dir = repo_dir.join(norm(&doc_set.path));
         if !docs_dir.exists() {
-            eprintln!("[git] Docs path not found: {}", docs_dir.display());
+            eprintln!("[git.rs] Docs path not found: {}", docs_dir.display());
             continue;
         }
 
@@ -357,7 +357,7 @@ async fn index_docs(repo_name: &str, doc_sets: &[DocSet], repo_dir: &Path, db: &
     }
 
     if count > 0 {
-        println!("[git] {}: indexed {} doc files", repo_name, count);
+        println!("[git.rs] {}: indexed {} doc files", repo_name, count);
     }
 }
 

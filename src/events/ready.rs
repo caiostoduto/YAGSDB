@@ -4,9 +4,11 @@ use poise::serenity_prelude as serenity;
 /// Sync DB if the bot is ready.
 pub async fn handle(
     ctx: &serenity::Context,
-    _data_about_bot: &serenity::Ready,
+    data_about_bot: &serenity::Ready,
     data: &Data,
 ) -> Result<(), Error> {
+    println!("[ready.rs] {} is ready!", data_about_bot.user.name);
+
     let _ = sync::run_sync(ctx, data).await;
     set_presence(ctx, data).await;
 

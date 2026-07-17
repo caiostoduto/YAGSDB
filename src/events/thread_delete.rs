@@ -1,4 +1,4 @@
-use crate::{Data, Error, utils::sync};
+use crate::{Data, Error};
 use poise::serenity_prelude::{self as serenity, GuildChannel};
 
 /// Remove thread from DB if it is deleted.
@@ -14,8 +14,8 @@ pub async fn handle(
         .execute(&data.db)
         .await;
     println!(
-        "[discord_forum] Thread {} deleted, removed from database.",
-        thread_id
+        "[thread_delete.rs] Thread (id={}) was deleted (removed from DB).",
+        thread.id
     );
 
     Ok(())

@@ -109,12 +109,12 @@ async fn fetch_all_pages<T: for<'de> Deserialize<'de>>(
                     page += 1;
                 }
                 Err(e) => {
-                    eprintln!("[github] Failed to deserialize page {}: {}", page, e);
+                    eprintln!("[github.rs] Failed to deserialize page {}: {}", page, e);
                     break;
                 }
             },
             Err(e) => {
-                eprintln!("[github] Request failed on page {}: {}", page, e);
+                eprintln!("[github.rs] Request failed on page {}: {}", page, e);
                 break;
             }
         }
@@ -308,7 +308,7 @@ async fn sync_repo(
 
     if metrics.total_items() > 0 {
         println!(
-            "[github] {}: +{} issues, +{} PRs, +{} comments, +{} releases",
+            "[github.rs] {}: +{} issues, +{} PRs, +{} comments, +{} releases",
             repo_name, metrics.issues, metrics.prs, metrics.comments, metrics.releases
         );
     }
@@ -334,11 +334,11 @@ async fn run_sync_cycle(
 
     if totals.total_items() > 0 {
         println!(
-            "[github] Sync complete — +{} issues, +{} PRs, +{} comments, +{} releases",
+            "[github.rs] Sync complete — +{} issues, +{} PRs, +{} comments, +{} releases",
             totals.issues, totals.prs, totals.comments, totals.releases
         );
     } else {
-        println!("[github] Sync complete — nothing new");
+        println!("[github.rs] Sync complete — nothing new");
     }
 }
 
@@ -347,14 +347,14 @@ pub async fn start_sync_job(db: SqlitePool, config: Config) {
     let token = config.github_token.clone();
 
     if token.is_empty() {
-        eprintln!("[github] No token provided, skipping sync job");
+        eprintln!("[github.rs] No token provided, skipping sync job");
         return;
     }
 
     let gh_repos = &config.data_repositories.github_issues;
 
     if gh_repos.is_empty() {
-        eprintln!("[github] No github repositories defined, skipping sync job");
+        eprintln!("[github.rs] No github repositories defined, skipping sync job");
         return;
     }
 

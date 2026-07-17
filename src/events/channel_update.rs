@@ -11,11 +11,16 @@ pub async fn handle(
     if new.kind == serenity::ChannelType::PublicThread {
         let thread_id = new.id.get().to_string();
         let tags_json = serde_json::to_string(&new.applied_tags).unwrap_or_default();
-        let _ = sqlx::query("UPDATE threads SET applied_tags = ? WHERE id = ?")
+        if let Ok(res) = sqlx::query("UPDATE threads SET applied_tags = ? WHERE id = ?")
             .bind(&tags_json)
             .bind(&thread_id)
             .execute(&data.db)
-            .await;
+            .await
+        {
+            if res.rows_affected() > 0 {
+                println!("[channel_update.rs] Thread '{}' tags was updated", new.name);
+            }
+        }
     }
 
     Ok(())

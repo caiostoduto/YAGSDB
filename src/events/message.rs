@@ -60,8 +60,10 @@ pub async fn handle(
             )
             .await;
 
-            println!("[message] {} created a new thread entitled '{}' and had {} results on search.",
-                new_message.author.name, guild_channel.name, results.len());
+            println!(
+                "[message.rs] {} created a new thread entitled '{}' and had {} results on search.",
+                new_message.author.name, guild_channel.name, results.len()
+            );
 
             if !results.is_empty() {
                 let header = &data.config.suggestion_header;
@@ -100,7 +102,7 @@ async fn post_suggestions(
         .content(content)
         .flags(serenity::model::channel::MessageFlags::SUPPRESS_EMBEDS);
     if let Err(e) = channel_id.send_message(ctx, msg).await {
-        eprintln!("[search] Failed to post suggestions: {}", e);
+        eprintln!("[message.rs] Failed to post suggestions: {}", e);
     }
 }
 
