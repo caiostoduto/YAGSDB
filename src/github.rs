@@ -98,23 +98,33 @@ async fn fetch_all_pages<T: for<'de> Deserialize<'de>>(
             .await;
 
         match resp {
-            Ok(r) => match r.json::<Vec<T>>().await {
-                Ok(items) => {
-                    let count = items.len();
-                    all_items.extend(items);
-
-                    if count < per_page {
-                        break; // Last page reached
-                    }
-                    page += 1;
-                }
-                Err(e) => {
-                    eprintln!("[github.rs] Failed to deserialize page {}: {}", page, e);
+            Ok(r) => {
+                let status = r.status();
+                if !status.is_success() {
+                    eprintln!(
+                        "[github.rs] HTTP Error {} on page {}",
+                        status, url
+                    );
                     break;
                 }
-            },
+                match r.json::<Vec<T>>().await {
+                    Ok(items) => {
+                        let count = items.len();
+                        all_items.extend(items);
+
+                        if count < per_page {
+                            break; // Last page reached
+                        }
+                        page += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("[github.rs] Failed to deserialize page {}: {}", url, e);
+                        break;
+                    }
+                }
+            }
             Err(e) => {
-                eprintln!("[github.rs] Request failed on page {}: {}", page, e);
+                eprintln!("[github.rs] Request failed on page {}: {}", url, e);
                 break;
             }
         }
