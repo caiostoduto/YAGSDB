@@ -14,7 +14,7 @@ threshold: 1.0
 # Maximum number of results returned per search.
 max_results: 4
 # Header prepended to the suggestion reply posted in new forum threads.
-suggestion_header: "Hey! I'm AutoModpack Discord Bot, and I'm here to help you figure out how to solve your issue. While you wait until someone reaches you, I've searched through our solutions database and found those related issues that you might want to take a look:"
+suggestion_header: "Hey! I'm [AutoModpack Discord Bot](https://github.com/caiostoduto/YAGSDB), and I'm here to help you figure out how to solve your issue. While you wait until someone reaches you, I've searched through our solutions database and found those related issues that you might want to take a look:"
 
 # ── Bot presence ──────────────────────────────────────────────────────────────
 
